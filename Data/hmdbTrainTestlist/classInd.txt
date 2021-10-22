@@ -1,0 +1,51 @@
+1 climb stairs
+2 pullup
+3 pick
+4 run
+5 stand
+6 swing baseball
+7 ride horse
+8 flic flac
+9 kick ball
+10 clap
+11 hug
+12 drink
+13 sit
+14 smile
+15 laugh
+16 dribble
+17 jump
+18 walk
+19 somersault
+20 dive
+21 shoot gun
+22 pushup
+23 wave
+24 cartwheel
+25 brush hair
+26 smoke
+27 climb
+28 shoot bow
+29 fencing
+30 chew
+31 punch
+32 shoot ball
+33 hit
+34 sword
+35 throw
+36 handstand
+37 eat
+38 talk
+39 push
+40 catch
+41 draw sword
+42 shake hands
+43 pour
+44 fall floor
+45 sword exercise
+46 kiss
+47 situp
+48 kick
+49 golf
+50 ride bike
+51 turn
