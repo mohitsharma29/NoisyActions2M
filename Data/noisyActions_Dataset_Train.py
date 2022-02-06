@@ -38,7 +38,7 @@ class NOISYACTIONSTRAIN(Dataset):
         video_path, video_label = self.video_paths[idx], self.targets[idx]
         video = self.get_video(video_path)
         # For Multi-Label
-        if self.mode == 'multi':
+        if self.mode == 'multi' or self.mode == 'multi_mixup':
             video_label = torch.tensor(video_label)
             video_label = torch.zeros(len(self.class_names)).scatter_(0,video_label,1.)
         """elif self.mode == 'partial':

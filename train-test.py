@@ -24,7 +24,6 @@ from Data.UCF101 import get_ucf101
 from Data.HMDB51 import get_hmdb51
 from Data.NOISYACTIONS import get_noisyActions
 from utils import AverageMeter, accuracy
-from transforms.mixup import MixupTransform
 import torch.nn as nn
 import torchmetrics
 
@@ -122,9 +121,7 @@ def main_training_testing(EXP_NAME):
     parser.add_argument('--no-val', default=False, type=bool, help='Whether to validate or not')
     parser.add_argument('--pretext-ssl', default=False, type=bool, help='Whether you are using Pretext SSL')
     parser.add_argument('--adv-attack', default=False, type=bool, help='Adv. Attack on Test set')
-    parser.add_argument('--noise-corr', default=False, type=bool, help='Add noise correction')
-    parser.add_argument('--noise-corr_type', default='mixup', type=str, 
-                        help='Type of noise correction you want to use')
+
     args = parser.parse_args()
     best_acc = 0
     #best_acc_2 = 0
@@ -195,30 +192,6 @@ def main_training_testing(EXP_NAME):
     args.iteration = len(train_dataset) // args.batch_size // args.world_size
     train_sampler = RandomSampler 
     #train_sampler = SequentialSampler
-    if args.noise-corr:
-        config = configparser.ConfigParser()
-        if args.noise-corr_type=="mixup":
-            print("Reading mixup config from: transforms/transforms_config.ini")
-            config.read("transforms/transforms_config.ini")
-            mixup_transform = MixupTransform(
-                config["alpha"],
-                num_classes=config["num_classes"],
-                cutmix_alpha=config["cutmix_alpha"],
-                cutmix_minmax=config["cutmix_minmax"],
-                mix_prob=config["mix_prob"],
-                switch_prob=config["switch_prob"],
-                mode=config["mode"],
-                label_smoothing=config["label_smoothing"],
-            )
-            train_dataset = mixup_transform(train_dataset)
-        elif args.noise-corr_type=="nested_dropout":
-            continue
-        else:
-            print("Invalid noise correction type, stopping training....")
-            return
-    else:
-        print("Continuing without noise correction....")
-        continue
     train_loader = DataLoader(
         train_dataset,
         sampler=train_sampler(train_dataset),
@@ -234,6 +207,19 @@ def main_training_testing(EXP_NAME):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=True)
+    
+    if args.training_mode == "multi_mixup":
+        config = configparser.ConfigParser()
+        from transforms.mixup import MixupTransform
+            print("Reading mixup config from: transforms/transforms_config.ini")
+            config.read("transforms/transforms_config.ini")
+            mixup_transform = MixupTransform(
+                config["alpha"],
+                None
+            )
+        else:
+            print("Invalid noise correction type, stopping training....")
+            assert 2==1
 
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, nesterov=args.nesterov)
     
@@ -332,6 +318,10 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch, scaler)
             from loss_functions.dist_bal_loss.class_freq import save_class_freq
             save_class_freq(args)
             criterion = resample_loss.ResampleLoss(reweight_func='rebalance')
+        elif args.multiLabelLoss == 'mixup_loss':
+            print("Using Soft Target CrossEntropy")
+            from loss_functions.soft_target_cross_entropy_loss import SoftTargetCrossEntropyLoss
+            criterion = SoftTargetCrossEntropyLoss(ignore_index=-1, reduction="mean", normalize_targets=False)
         else:
             assert 2 == 1
     elif args.training_mode == 'partial':
@@ -363,6 +353,11 @@ def train(args, labeled_trainloader, model, optimizer, scheduler, epoch, scaler)
             partial_x = deepcopy(targets_x[1])
             targets_x = targets_x[0]"""
         targets_x = targets_x.to(args.device)
+        # Apply mixup transform
+        if args.training_mode == 'multi_mixup':
+            mixup_batch = mixup_transform({'input': inputs, 'target': targets_x})
+            inputs = mixup_batch['input']
+            targets_x = mixup_batch['target']
         # MP loop
         # For Asymmetric Multi-Label Loss its recommended to not use MP
         if args.training_mode == 'multi' and args.multiLabelLoss == 'asym':
@@ -458,6 +453,12 @@ def test(args, test_loader, model, epoch, training_mode='single'):
                         from loss_functions.dist_bal_loss import resample_loss
                         criterion = resample_loss.ResampleLoss()
                         loss = criterion(outputs, targets)
+                elif args.training_mode == 'multi_mixup':
+                    if args.multiLabelLoss == 'mixup_loss':
+                         elif args.multiLabelLoss == 'mixup_loss':
+                            from loss_functions.soft_target_cross_entropy_loss import SoftTargetCrossEntropyLoss
+                            criterion = SoftTargetCrossEntropyLoss(ignore_index=-1, reduction="mean", normalize_targets=False)
+                            loss = criterion(outputs, targets)
                     out_prob = torch.sigmoid(outputs)
                     out_prob[out_prob >= 0.5] = 1
                 elif args.training_mode == 'partial':
@@ -523,7 +524,7 @@ def test(args, test_loader, model, epoch, training_mode='single'):
         secondary_accuracy = (sum(secondary_accuracy)/len(secondary_accuracy))
         print(f'test accuracy: {secondary_accuracy}')
         return losses.avg, secondary_accuracy
-    elif args.training_mode == 'multi':
+    elif args.training_mode == 'multi' or args.training_mode == 'multi_mixup':
         for key in predicted_target:
             clip_values = np.array(predicted_target[key]).mean(axis=0)
             predicted_target[key] = clip_values
